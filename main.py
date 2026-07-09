@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from curl_cffi import requests
 from tradingview_ta import TA_Handler, Interval
@@ -44,7 +45,7 @@ def get_gold_technicals():
         try:
             handler = TA_Handler(
                 symbol="XAUUSD",
-                screener="cfd",
+                screener="forex",
                 exchange="OANDA",
                 interval=interval
             )
@@ -91,7 +92,7 @@ def send_to_discord(events, gold_ta_dict):
                     
             description += f"{icon} **{label}** {time_str} | **{country}** | {title}\n"
             
-    # --- 2. Format Multi-Timeframe Technicals ---
+    # --- 2. Format Multi-Timeframe Summary ---
     ta_description = ""
     for timeframe, ta in gold_ta_dict.items():
         if ta:
@@ -115,52 +116,73 @@ def send_to_discord(events, gold_ta_dict):
         else:
             ta_description += f"⚠️ **{timeframe}:** Data Unavailable\n"
 
-    # --- 3. Format Detailed 4H Indicators Table ---
-    detailed_table = ""
-    ta_4h = gold_ta_dict.get("4 Hour")
-    if ta_4h:
-        # Map Display Name -> (Raw Value Key, Compute Recommendation Key)
-        osc_map = [
-            ("Relative Strength Index (14)", "RSI", "RSI"),
-            ("Stochastic %K (14, 3, 3)", "Stoch.K", "STOCH.K"),
-            ("Commodity Channel Index (20)", "CCI20", "CCI"),
-            ("Average Directional Index (14)", "ADX", "ADX"),
-            ("Awesome Oscillator", "AO", "AO"),
-            ("Momentum (10)", "Mom", "Mom"),
-            ("MACD Level (12, 26)", "MACD.macd", "MACD"),
-            ("Stochastic RSI Fast", "Stoch.RSI.K", "Stoch.RSI"),
-            ("Williams Percent Range (14)", "W.R", "W%R"),
-            ("Bull Bear Power", "BBPower", "BBP"),
-            ("Ultimate Oscillator", "UO", "UO"),
+    # --- 3. Send Main Payload (Calendar + Summary) ---
+    main_payload = {
+        "username": "Macro & Tech Alerts",
+        "embeds": [
+            {
+                "title": f"📅 Economic Calendar Summary for {current_date_str}",
+                "description": description,
+                "color": 16711680,
+            },
+            {
+                "title": "📈 XAUUSD (Gold / USD) Multi-Timeframe",
+                "description": ta_description,
+                "color": 16766720, 
+            }
         ]
-        
-        ma_map = [
-            ("Exponential Moving Average (10)", "EMA10", "EMA10"),
-            ("Simple Moving Average (10)", "SMA10", "SMA10"),
-            ("Exponential Moving Average (20)", "EMA20", "EMA20"),
-            ("Simple Moving Average (20)", "SMA20", "SMA20"),
-            ("Exponential Moving Average (30)", "EMA30", "EMA30"),
-            ("Simple Moving Average (30)", "SMA30", "SMA30"),
-            ("Exponential Moving Average (50)", "EMA50", "EMA50"),
-            ("Simple Moving Average (50)", "SMA50", "SMA50"),
-            ("Exponential Moving Average (100)", "EMA100", "EMA100"),
-            ("Simple Moving Average (100)", "SMA100", "SMA100"),
-            ("Exponential Moving Average (200)", "EMA200", "EMA200"),
-            ("Simple Moving Average (200)", "SMA200", "SMA200"),
-            ("Ichimoku Base Line", "Ichimoku.BLine", "Ichimoku"),
-            ("Volume Weighted MA (20)", "VWMA", "VWMA"),
-            ("Hull Moving Average (9)", "HullMA9", "HullMA9"),
-        ]
+    }
+    
+    response = requests.post(WEBHOOK_URL, json=main_payload, impersonate="chrome")
+    response.raise_for_status()
 
-        # Build Discord Code Block for monospaced alignment
+    # --- 4. Format Detailed Indicator Tables for ALL Timeframes ---
+    osc_map = [
+        ("Relative Strength Index (14)", "RSI", "RSI"),
+        ("Stochastic %K (14, 3, 3)", "Stoch.K", "STOCH.K"),
+        ("Commodity Channel Index (20)", "CCI20", "CCI"),
+        ("Average Directional Index (14)", "ADX", "ADX"),
+        ("Awesome Oscillator", "AO", "AO"),
+        ("Momentum (10)", "Mom", "Mom"),
+        ("MACD Level (12, 26)", "MACD.macd", "MACD"),
+        ("Stochastic RSI Fast", "Stoch.RSI.K", "Stoch.RSI"),
+        ("Williams Percent Range (14)", "W.R", "W%R"),
+        ("Bull Bear Power", "BBPower", "BBP"),
+        ("Ultimate Oscillator", "UO", "UO"),
+    ]
+    
+    ma_map = [
+        ("Exponential Moving Average (10)", "EMA10", "EMA10"),
+        ("Simple Moving Average (10)", "SMA10", "SMA10"),
+        ("Exponential Moving Average (20)", "EMA20", "EMA20"),
+        ("Simple Moving Average (20)", "SMA20", "SMA20"),
+        ("Exponential Moving Average (30)", "EMA30", "EMA30"),
+        ("Simple Moving Average (30)", "SMA30", "SMA30"),
+        ("Exponential Moving Average (50)", "EMA50", "EMA50"),
+        ("Simple Moving Average (50)", "SMA50", "SMA50"),
+        ("Exponential Moving Average (100)", "EMA100", "EMA100"),
+        ("Simple Moving Average (100)", "SMA100", "SMA100"),
+        ("Exponential Moving Average (200)", "EMA200", "EMA200"),
+        ("Simple Moving Average (200)", "SMA200", "SMA200"),
+        ("Ichimoku Base Line", "Ichimoku.BLine", "Ichimoku"),
+        ("Volume Weighted MA (20)", "VWMA", "VWMA"),
+        ("Hull Moving Average (9)", "HullMA9", "HullMA9"),
+    ]
+
+    detailed_embeds = []
+    
+    for timeframe, ta in gold_ta_dict.items():
+        if not ta:
+            continue
+            
         detailed_table = "```text\n"
         detailed_table += f"{'OSCILLATORS':<34} {'VALUE':<10} {'ACTION'}\n"
         detailed_table += "-" * 54 + "\n"
         
         for name, ind_key, comp_key in osc_map:
-            val = ta_4h.indicators.get(ind_key)
+            val = ta.indicators.get(ind_key)
             val_str = f"{val:.2f}" if isinstance(val, (float, int)) and val is not None else "N/A"
-            action = ta_4h.oscillators["COMPUTE"].get(comp_key, "Neutral").title()
+            action = ta.oscillators["COMPUTE"].get(comp_key, "Neutral").title()
             detailed_table += f"{name:<34} {val_str:<10} {action}\n"
             
         detailed_table += "\n"
@@ -168,43 +190,29 @@ def send_to_discord(events, gold_ta_dict):
         detailed_table += "-" * 54 + "\n"
         
         for name, ind_key, comp_key in ma_map:
-            val = ta_4h.indicators.get(ind_key)
+            val = ta.indicators.get(ind_key)
             val_str = f"{val:.2f}" if isinstance(val, (float, int)) and val is not None else "N/A"
-            action = ta_4h.moving_averages["COMPUTE"].get(comp_key, "Neutral").title()
+            action = ta.moving_averages["COMPUTE"].get(comp_key, "Neutral").title()
             detailed_table += f"{name:<34} {val_str:<10} {action}\n"
             
         detailed_table += "```"
-
-    # --- 4. Build Multi-Embed Payload ---
-    embeds = [
-        {
-            "title": f"📅 Economic Calendar Summary for {current_date_str}",
-            "description": description,
-            "color": 16711680,
-        },
-        {
-            "title": "📈 XAUUSD (Gold / USD) Multi-Timeframe",
-            "description": ta_description,
-            "color": 16766720, 
-        }
-    ]
-    
-    # Append the detailed table as a third embed if data exists
-    if detailed_table:
-        embeds.append({
-            "title": "📊 XAUUSD 4-Hour In-Depth Indicators",
+        
+        detailed_embeds.append({
+            "title": f"📊 XAUUSD {timeframe} In-Depth Indicators",
             "description": detailed_table,
             "color": 16766720,
-            "footer": {"text": "Data provided by TradingView via OANDA"}
         })
 
-    payload = {
-        "username": "Macro & Tech Alerts",
-        "embeds": embeds
-    }
-        
-    response = requests.post(WEBHOOK_URL, json=payload, impersonate="chrome")
-    response.raise_for_status()
+    # --- 5. Dispatch Detailed Tables in Chunks ---
+    # Send 2 timeframes per message to safely stay under Discord's 6,000 character limit
+    for i in range(0, len(detailed_embeds), 2):
+        chunk_payload = {
+            "username": "Macro & Tech Alerts",
+            "embeds": detailed_embeds[i:i+2]
+        }
+        res = requests.post(WEBHOOK_URL, json=chunk_payload, impersonate="chrome")
+        res.raise_for_status()
+        time.sleep(1) # Brief pause to prevent Discord rate-limiting
 
 if __name__ == "__main__":
     if not WEBHOOK_URL:
@@ -213,4 +221,4 @@ if __name__ == "__main__":
     events = get_todays_events()
     gold_ta_dict = get_gold_technicals()
     send_to_discord(events, gold_ta_dict)
-    print(f"Successfully processed events and detailed Gold technicals.")
+    print(f"Successfully processed events and detailed Gold technicals for all timeframes.")
