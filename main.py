@@ -1,19 +1,17 @@
 import os
 from datetime import datetime, timedelta, timezone
-from curl_cffi import requests # Replaces standard requests to bypass Cloudflare
+from curl_cffi import requests
 
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 FF_JSON_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 
 def get_todays_events():
-    # Impersonate Chrome to bypass Cloudflare blocks on GitHub Actions IPs
     response = requests.get(FF_JSON_URL, impersonate="chrome")
     response.raise_for_status()
     
     events = response.json()
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
-    # Filter for events matching today's date
     return [e for e in events if e.get("date", "").startswith(today_str)]
 
 def send_to_discord(events):
@@ -22,7 +20,6 @@ def send_to_discord(events):
         return
 
     description = ""
-    # Set timezone for local alert formatting
     pkt_tz = timezone(timedelta(hours=5)) 
 
     for e in events:
@@ -31,7 +28,6 @@ def send_to_discord(events):
         country = e.get("country", "")
         date_str = e.get("date", "")
         
-        # Parse the ISO string and convert to PKT
         time_str = "All Day"
         if date_str:
             try:
@@ -40,9 +36,8 @@ def send_to_discord(events):
                     dt_pkt = dt.astimezone(pkt_tz)
                     time_str = dt_pkt.strftime("%I:%M %p")
             except ValueError:
-                pass # Fallback to "All Day" if parsing fails
+                pass
             
-        # Map impact levels to visual indicators, including holidays
         if impact == "High":
             icon = "🔴"
         elif impact == "Medium":
@@ -54,7 +49,8 @@ def send_to_discord(events):
         else:
             icon = "⚪"
                 
-        description += f"{icon} **{time_str}** | **{country}** | {title}\n"
+        # Added explicit text label for impact level next to the country code
+        description += f"{icon} **{time_str}** | **{country}** ({impact}) | {title}\n"
             
     payload = {
         "username": "Macro Alerts",
@@ -62,7 +58,7 @@ def send_to_discord(events):
             {
                 "title": f"📅 Economic Calendar Summary for {datetime.now(pkt_tz).strftime('%A, %b %d')}",
                 "description": description,
-                "color": 16711680, # Red
+                "color": 16711680, 
                 "footer": {"text": "Times converted to Pakistan Standard Time (PKT)"}
             }
         ]
