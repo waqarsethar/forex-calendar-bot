@@ -44,7 +44,7 @@ def get_gold_technicals():
         try:
             handler = TA_Handler(
                 symbol="XAUUSD",
-                screener="forex",
+                screener="cfd",
                 exchange="OANDA",
                 interval=interval
             )
