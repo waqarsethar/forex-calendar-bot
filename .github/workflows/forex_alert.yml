@@ -2,9 +2,13 @@ name: Daily Forex Calendar Alert
 
 on:
   schedule:
-    # Runs at 02:00 UTC (7:00 AM PKT) every day
-    - cron: '0 2 * * *'
-  workflow_dispatch: 
+    # London (07:30 UTC) and New York (12:30 UTC) - Monday through Friday
+    - cron: '30 7,12 * * 1-5'
+    
+    # Tokyo (23:30 UTC) - Sunday through Thursday (for Mon-Fri Tokyo mornings)
+    - cron: '30 23 * * 0-4'
+    
+  workflow_dispatch:
 
 jobs:
   send-alert:
@@ -12,15 +16,15 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
+        
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
+          
       - name: Install dependencies
         run: pip install curl-cffi tradingview-ta
-
+        
       - name: Execute Extraction Script
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
