@@ -32,16 +32,32 @@ def get_todays_events():
     return todays_events
 
 def get_gold_technicals():
-    # Targets the exact asset and exchange requested
-    handler = TA_Handler(
-        symbol="XAUUSD",
-        screener="cfd",
-        exchange="OANDA",
-        interval=Interval.INTERVAL_4_HOURS
-    )
-    return handler.get_analysis()
+    # Define the timeframes to fetch
+    timeframes = {
+        "15 Minute": Interval.INTERVAL_15_MINUTES,
+        "1 Hour": Interval.INTERVAL_1_HOUR,
+        "4 Hour": Interval.INTERVAL_4_HOURS,
+        "Daily": Interval.INTERVAL_1_DAY
+    }
+    
+    results = {}
+    
+    for label, interval in timeframes.items():
+        try:
+            handler = TA_Handler(
+                symbol="XAUUSD",
+                screener="forex",
+                exchange="OANDA",
+                interval=interval
+            )
+            results[label] = handler.get_analysis()
+        except Exception as e:
+            print(f"Failed to fetch {label} technicals: {e}")
+            results[label] = None
+            
+    return results
 
-def send_to_discord(events, gold_ta):
+def send_to_discord(events, gold_ta_dict):
     pkt_tz = timezone(timedelta(hours=5))
     current_date_str = datetime.now(pkt_tz).strftime('%A, %b %d')
     
@@ -77,29 +93,31 @@ def send_to_discord(events, gold_ta):
                     
             description += f"{icon} **{label}** {time_str} | **{country}** | {title}\n"
             
-    # --- 2. Format XAUUSD Technicals ---
-    ta_rec = gold_ta.summary["RECOMMENDATION"].replace("_", " ").title()
-    ta_buy = gold_ta.summary["BUY"]
-    ta_sell = gold_ta.summary["SELL"]
-    ta_neutral = gold_ta.summary["NEUTRAL"]
-    
-    osc_rec = gold_ta.oscillators["RECOMMENDATION"].title()
-    ma_rec = gold_ta.moving_averages["RECOMMENDATION"].title()
-    
-    ta_description = (
-        f"**Summary Gauge:** {ta_rec} (Buy: {ta_buy} | Sell: {ta_sell} | Neutral: {ta_neutral})\n"
-        f"**Oscillators:** {osc_rec}\n"
-        f"**Moving Averages:** {ma_rec}\n"
-    )
-
-    # Dynamically change the technical embed color based on the summary signal
-    if "Sell" in ta_rec:
-        embed_color = 15158332 # Red
-    elif "Buy" in ta_rec:
-        embed_color = 3066993 # Green
-    else:
-        embed_color = 9807270 # Gray
+    # --- 2. Format Multi-Timeframe Technicals ---
+    ta_description = ""
+    for timeframe, ta in gold_ta_dict.items():
+        if ta:
+            rec = ta.summary["RECOMMENDATION"].replace("_", " ").title()
+            buy = ta.summary["BUY"]
+            sell = ta.summary["SELL"]
+            neutral = ta.summary["NEUTRAL"]
             
+            # Map recommendation to an emoji for quick visual scanning
+            if "Strong Buy" in rec:
+                indicator = "🚀"
+            elif "Buy" in rec:
+                indicator = "🟢"
+            elif "Strong Sell" in rec:
+                indicator = "🩸"
+            elif "Sell" in rec:
+                indicator = "🔴"
+            else:
+                indicator = "⚪"
+                
+            ta_description += f"{indicator} **{timeframe}:** {rec} *(Buy: {buy} | Sell: {sell} | Neutral: {neutral})*\n"
+        else:
+            ta_description += f"⚠️ **{timeframe}:** Data Unavailable\n"
+
     # --- 3. Build Multi-Embed Payload ---
     payload = {
         "username": "Macro & Tech Alerts",
@@ -110,10 +128,10 @@ def send_to_discord(events, gold_ta):
                 "color": 16711680,
             },
             {
-                "title": "📈 XAUUSD (Gold / USD) 4H Technicals",
+                "title": "📈 XAUUSD (Gold / USD) Multi-Timeframe Technicals",
                 "description": ta_description,
-                "color": embed_color,
-                "footer": {"text": "Data provided by TradingView via Pepperstone"}
+                "color": 16766720, # Gold color hex
+                "footer": {"text": "Data provided by TradingView via OANDA"}
             }
         ]
     }
@@ -126,6 +144,6 @@ if __name__ == "__main__":
         raise ValueError("DISCORD_WEBHOOK_URL environment variable is missing.")
     
     events = get_todays_events()
-    gold_ta = get_gold_technicals()
-    send_to_discord(events, gold_ta)
-    print(f"Successfully processed {len(events)} events and Gold technicals.")
+    gold_ta_dict = get_gold_technicals()
+    send_to_discord(events, gold_ta_dict)
+    print(f"Successfully processed events and multi-timeframe Gold technicals.")
