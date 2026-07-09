@@ -59,17 +59,23 @@ def send_to_discord(events):
             
         if impact == "High":
             icon = "🔴"
+            label = "[HIGH]"
         elif impact == "Medium":
             icon = "🟠"
+            label = "[MEDIUM]"
         elif impact == "Low":
             icon = "🟡"
+            label = "[LOW]"
         elif impact == "Holiday":
             icon = "💤"
+            label = "[HOLIDAY]"
             time_str = "All Day"
         else:
             icon = "⚪"
+            label = f"[{impact.upper()}]"
                 
-        description += f"{icon} **{time_str}** | **{country}** ({impact}) | {title}\n"
+        # Placed the text label immediately after the color code icon
+        description += f"{icon} **{label}** {time_str} | **{country}** | {title}\n"
             
     payload = {
         "username": "Macro Alerts",
